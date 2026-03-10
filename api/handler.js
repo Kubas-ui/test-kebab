@@ -23,7 +23,8 @@ module.exports = async (req, res) => {
   req.body = await parseBody(req);
   try { await ensureDB(); } catch(e) { return send(res, 500, { error: 'DB init: ' + e.message }); }
 
-  const parts = Array.isArray(req.query.params) ? req.query.params : [req.query.params].filter(Boolean);
+  const rawUrl = req.url || '/';
+const parts = rawUrl.split('?')[0].replace(/^\/api\/?/, '').split('/').filter(Boolean);
   const method = req.method;
   const qs = { ...req.query }; delete qs.params;
 
