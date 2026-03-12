@@ -10,7 +10,10 @@ import ChangePassword from './components/ChangePassword.jsx'
 const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
 
 export default function App() {
-  const [page, setPage] = useState('menu')
+  const [page, setPage] = useState(() => {
+    const hasAuth = !!localStorage.getItem('sultan_auth')
+    return (window.location.hash === '#panel' && hasAuth) ? 'admin' : 'menu'
+  })
   const [cart, setCart] = useState([])
   const [order, setOrder] = useState(null)
   const [menuData, setMenuData] = useState(null)
@@ -31,11 +34,6 @@ export default function App() {
       .then(r => r.json())
       .then(data => { setMenuData(data); setLoading(false) })
       .catch(() => setLoading(false))
-  }, [])
-
-  // Detect /#panel URL - redirect if already logged in
-  useEffect(() => {
-    if (window.location.hash === '#panel' && auth) setPage('admin')
   }, [])
 
   function handleLogin(data) {
