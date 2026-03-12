@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
 
@@ -32,19 +32,105 @@ const CMS_SECTIONS = [
 
 // ─── Root Admin ───────────────────────────────────────────────────────────────
 
-export default function Admin() {
+export default function Admin({ auth, onLogout }) {
   const [tab, setTab] = useState('orders')
+  const [newOrderPopup, setNewOrderPopup] = useState(null)
+  const lastOrderIdRef = useRef(null)
+  const isAdmin = auth?.role === 'admin'
+
+  // Poll for new orders every 15s
+  useEffect(() => {
+    async function checkNewOrders() {
+      try {
+        const res = await fetch(`${API}/orders`, {
+          headers: { 'Authorization': `Bearer ${auth?.token}` }
+        })
+        if (!res.ok) return
+        const orders = await res.json()
+        if (!orders.length) return
+        const newest = orders[0]
+        if (lastOrderIdRef.current === null) {
+          lastOrderIdRef.current = newest.id
+          return
+        }
+        if (newest.id > lastOrderIdRef.current && newest.order_status === 'new') {
+          lastOrderIdRef.current = newest.id
+          setNewOrderPopup(newest)
+          // Play sound
+          try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)()
+            const osc = ctx.createOscillator()
+            const gain = ctx.createGain()
+            osc.connect(gain)
+            gain.connect(ctx.destination)
+            osc.frequency.setValueAtTime(880, ctx.currentTime)
+            osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.15)
+            osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3)
+            gain.gain.setValueAtTime(0.3, ctx.currentTime)
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
+            osc.start(ctx.currentTime)
+            osc.stop(ctx.currentTime + 0.6)
+          } catch {}
+        }
+      } catch {}
+    }
+    checkNewOrders()
+    const interval = setInterval(checkNewOrders, 15000)
+    return () => clearInterval(interval)
+  }, [auth])
+
+  const tabs = [
+    { id: 'orders', label: '📋 Zamówienia' },
+    ...(isAdmin ? [
+      { id: 'cms',   label: '✏️ Zarządzaj treścią' },
+      { id: 'users', label: '👥 Użytkownicy' },
+    ] : []),
+  ]
 
   return (
     <div style={{ minHeight: 'calc(100vh - 64px)' }}>
+      {/* New order popup */}
+      {newOrderPopup && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.7)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'var(--bg-1)', border: '2px solid var(--gold)',
+            borderRadius: 16, padding: '36px 40px', maxWidth: 380, width: '90%',
+            textAlign: 'center', animation: 'fadeUp 0.3s ease',
+            boxShadow: '0 0 60px rgba(201,168,76,0.3)',
+          }}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>🔔</div>
+            <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, color: 'var(--gold)', marginBottom: 8 }}>
+              Nowe zamówienie!
+            </h2>
+            <p style={{ color: 'var(--text-2)', fontSize: 15, marginBottom: 4 }}>
+              #{newOrderPopup.order_number}
+            </p>
+            <p style={{ color: 'var(--text-1)', fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
+              {newOrderPopup.customer_name}
+            </p>
+            <p style={{ color: 'var(--gold)', fontSize: 22, fontWeight: 700, marginBottom: 24 }}>
+              {parseFloat(newOrderPopup.total).toFixed(0)} zł
+            </p>
+            <button
+              className="btn-primary"
+              onClick={() => { setNewOrderPopup(null); setTab('orders') }}
+              style={{ width: '100%', padding: 14 }}
+            >
+              Zobacz zamówienie
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{
         borderBottom: '1px solid var(--border)', background: 'var(--bg-1)',
         padding: '0 28px', display: 'flex', gap: 2,
       }}>
-        {[
-          { id: 'orders', label: '📋 Zamówienia' },
-          { id: 'cms',    label: '✏️ Zarządzaj treścią' },
-        ].map(t => (
+        {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             padding: '14px 20px', background: 'none', border: 'none',
             borderBottom: `2px solid ${tab === t.id ? 'var(--gold)' : 'transparent'}`,
@@ -54,15 +140,16 @@ export default function Admin() {
           }}>{t.label}</button>
         ))}
       </div>
-      {tab === 'orders' && <OrdersPanel />}
-      {tab === 'cms'    && <CMSPanel />}
+      {tab === 'orders' && <OrdersPanel auth={auth} />}
+      {tab === 'cms'    && isAdmin && <CMSPanel auth={auth} />}
+      {tab === 'users'  && isAdmin && <UsersPanel auth={auth} />}
     </div>
   )
 }
 
 // ─── CMS Panel ────────────────────────────────────────────────────────────────
 
-function CMSPanel() {
+function CMSPanel({ auth }) {
   const [section, setSection] = useState('menu')
 
   return (
@@ -123,7 +210,7 @@ function MenuEditor() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API}/menu/items`).then(r => r.json()),
+      fetch(`${API}/menu/items`, { headers: { 'Authorization': `Bearer ${auth?.token}` } }).then(r => r.json()),
       fetch(`${API}/menu`).then(r => r.json()),
     ]).then(([menuData, menuPublic]) => {
       setItems(menuData)
@@ -154,7 +241,7 @@ function MenuEditor() {
     if (!window.confirm('Usunąć tę pozycję z menu?')) return
     setDeleting(id)
     try {
-      await fetch(`${API}/menu/items/${id}`, { method: 'DELETE' })
+      await fetch(`${API}/menu/items/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${auth?.token}` } })
       setItems(prev => prev.filter(i => i.id !== id))
       if (editingId === id) cancelEdit()
       showToast('✓ Usunięto pozycję')
@@ -282,7 +369,7 @@ function CustomizationEditor({ category }) {
 
   useEffect(() => {
     setLoading(true)
-    fetch(`${API}/customizations/${category}`)
+    fetch(`${API}/customizations/${category}`, { headers: { 'Authorization': `Bearer ${auth?.token}` } })
       .then(r => r.json())
       .then(data => { setItems(data); setLoading(false) })
       .catch(() => setLoading(false))
@@ -311,7 +398,7 @@ function CustomizationEditor({ category }) {
     if (!window.confirm('Usunąć tę pozycję?')) return
     setDeleting(id)
     try {
-      await fetch(`${API}/customizations/${category}/${id}`, { method: 'DELETE' })
+      await fetch(`${API}/customizations/${category}/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${auth?.token}` } })
       setItems(prev => prev.filter(i => i.id !== id))
       if (editingId === id) cancelEdit()
       showToast('✓ Usunięto')
@@ -753,7 +840,7 @@ function LoadingSpinner() {
 
 // ─── Orders Panel (unchanged) ─────────────────────────────────────────────────
 
-function OrdersPanel() {
+function OrdersPanel({ auth }) {
   const [orders, setOrders] = useState([])
   const [stats, setStats] = useState(null)
   const [filter, setFilter] = useState('all')
@@ -764,7 +851,11 @@ function OrdersPanel() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [oRes, sRes] = await Promise.all([fetch(`${API}/orders`), fetch(`${API}/stats`)])
+      const headers = { 'Authorization': `Bearer ${auth?.token}` }
+      const [oRes, sRes] = await Promise.all([
+        fetch(`${API}/orders`, { headers }),
+        fetch(`${API}/stats`, { headers })
+      ])
       const [oData, sData] = await Promise.all([oRes.json(), sRes.json()])
       setOrders(oData); setStats(sData); setLastRefresh(new Date())
     } catch (e) { console.error(e) }
@@ -777,6 +868,7 @@ function OrdersPanel() {
     setUpdating(orderId)
     try {
       await fetch(`${API}/orders/${orderId}/status`, {
+        headers: { 'Authorization': `Bearer ${auth?.token}` },
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
@@ -968,6 +1060,157 @@ function DetailSection({ title, children }) {
     <div style={{ marginBottom: 14 }}>
       <p style={{ fontSize: 11, color: 'var(--text-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>{title}</p>
       {children}
+    </div>
+  )
+}
+
+// ─── Users Panel ──────────────────────────────────────────────────────────────
+
+function UsersPanel({ auth }) {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [newUsername, setNewUsername] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newRole, setNewRole] = useState('worker')
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  const headers = { 'Authorization': `Bearer ${auth?.token}`, 'Content-Type': 'application/json' }
+
+  useEffect(() => { loadUsers() }, [])
+
+  async function loadUsers() {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API}/users`, { headers })
+      const data = await res.json()
+      if (res.ok) setUsers(data)
+      else setError(data.error || 'Błąd ładowania')
+    } catch { setError('Błąd połączenia') }
+    finally { setLoading(false) }
+  }
+
+  async function handleAdd() {
+    setFormError('')
+    if (!newUsername.trim()) return setFormError('Wpisz login')
+    if (!newPassword.trim() || newPassword.length < 6) return setFormError('Hasło musi mieć min. 6 znaków')
+    setSaving(true)
+    try {
+      const res = await fetch(`${API}/users`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ username: newUsername.trim(), password: newPassword, role: newRole }),
+      })
+      const data = await res.json()
+      if (!res.ok) return setFormError(data.error || 'Błąd dodawania')
+      setUsers(prev => [...prev, data])
+      setNewUsername(''); setNewPassword(''); setNewRole('worker')
+      setShowForm(false)
+    } catch { setFormError('Błąd połączenia') }
+    finally { setSaving(false) }
+  }
+
+  async function handleDelete(id, username) {
+    if (!confirm(`Usunąć użytkownika "${username}"?`)) return
+    try {
+      const res = await fetch(`${API}/users/${id}`, { method: 'DELETE', headers })
+      if (res.ok) setUsers(prev => prev.filter(u => u.id !== id))
+    } catch {}
+  }
+
+  return (
+    <div className="container" style={{ paddingTop: 32, paddingBottom: 48, maxWidth: 600 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontFamily: 'Cormorant Garamond, serif', fontSize: 28, color: 'var(--gold)' }}>Użytkownicy</h2>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2 }}>Zarządzaj kontami pracowników</p>
+        </div>
+        <button className="btn-primary" onClick={() => setShowForm(!showForm)} style={{ padding: '10px 18px' }}>
+          {showForm ? 'Anuluj' : '+ Dodaj użytkownika'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{
+          background: 'var(--bg-1)', border: '1px solid var(--gold)',
+          borderRadius: 12, padding: 24, marginBottom: 24,
+        }}>
+          <h3 style={{ fontSize: 16, color: 'var(--text-1)', marginBottom: 18 }}>Nowy użytkownik</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 6 }}>Login</label>
+              <input className="input" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="np. kasjer1" style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 6 }}>Hasło startowe</label>
+              <input className="input" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Min. 6 znaków" style={{ width: '100%' }} />
+              <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>Pracownik będzie musiał je zmienić przy pierwszym logowaniu</p>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 6 }}>Rola</label>
+              <select className="input" value={newRole} onChange={e => setNewRole(e.target.value)} style={{ width: '100%' }}>
+                <option value="worker">Pracownik (tylko zamówienia)</option>
+                <option value="admin">Admin (pełny dostęp)</option>
+              </select>
+            </div>
+            {formError && (
+              <div style={{ background: 'rgba(224,80,80,0.1)', border: '1px solid rgba(224,80,80,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--red)' }}>{formError}</div>
+            )}
+            <button className="btn-primary" onClick={handleAdd} disabled={saving} style={{ padding: '12px', alignSelf: 'flex-start' }}>
+              {saving ? 'Dodawanie...' : 'Dodaj użytkownika'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
+      ) : error ? (
+        <div style={{ color: 'var(--red)', padding: 20 }}>{error}</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {users.map(user => (
+            <div key={user.id} style={{
+              background: 'var(--bg-1)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '16px 20px',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: '50%',
+                  background: user.role === 'admin' ? 'var(--gold-dim)' : 'var(--bg-2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18,
+                }}>
+                  {user.role === 'admin' ? '👑' : '👤'}
+                </div>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-1)' }}>{user.username}</p>
+                  <p style={{ fontSize: 12, color: user.role === 'admin' ? 'var(--gold)' : 'var(--text-3)', marginTop: 2 }}>
+                    {user.role === 'admin' ? 'Administrator' : 'Pracownik'}
+                  </p>
+                </div>
+              </div>
+              {user.username !== auth?.username && (
+                <button
+                  onClick={() => handleDelete(user.id, user.username)}
+                  style={{
+                    background: 'none', border: '1px solid rgba(224,80,80,0.3)',
+                    color: 'var(--red)', borderRadius: 6, padding: '6px 12px',
+                    fontSize: 12, cursor: 'pointer',
+                  }}
+                >
+                  Usuń
+                </button>
+              )}
+              {user.username === auth?.username && (
+                <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Twoje konto</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

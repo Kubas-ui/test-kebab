@@ -24,6 +24,7 @@ export default function Payment({ cart, cartTotal, onBack, onSuccess }) {
 
   const [loading, setLoading] = useState(false)
   const [orderId, setOrderId] = useState(null)
+  const [termsAccepted, setTermsAccepted] = useState(false)
 
   // ── Format helpers
   function formatCard(val) {
@@ -49,6 +50,7 @@ export default function Payment({ cart, cartTotal, onBack, onSuccess }) {
     if (!deliveryStreet.trim()) return setError('Podaj ulicę dostawy')
     if (!deliveryNumber.trim()) return setError('Podaj numer domu/mieszkania')
     if (!deliveryCity.trim()) return setError('Podaj miasto')
+    if (!termsAccepted) return setError('Zaakceptuj regulamin i politykę prywatności')
 
     setLoading(true)
     try {
@@ -229,9 +231,31 @@ export default function Payment({ cart, cartTotal, onBack, onSuccess }) {
               <span style={{ fontSize: 26, fontWeight: 600, color: 'var(--gold)' }}>{cartTotal.toFixed(0)} zł</span>
             </div>
 
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12,
+              cursor: 'pointer', padding: '14px 16px',
+              background: termsAccepted ? 'rgba(201,168,76,0.06)' : 'var(--bg-2)',
+              border: `1px solid ${termsAccepted ? 'rgba(201,168,76,0.3)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius)', transition: 'all 0.2s',
+            }}>
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={e => setTermsAccepted(e.target.checked)}
+                style={{ marginTop: 2, accentColor: 'var(--gold)', width: 16, height: 16, flexShrink: 0, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5 }}>
+                Zapoznałem/am się z{' '}
+                <span style={{ color: 'var(--gold)', textDecoration: 'underline' }}>regulaminem</span>
+                {' '}i{' '}
+                <span style={{ color: 'var(--gold)', textDecoration: 'underline' }}>polityką prywatności</span>
+                {' '}i akceptuję warunki składania zamówień.
+              </span>
+            </label>
+
             {error && <ErrorMsg msg={error} />}
 
-            <button className="btn-primary" onClick={handlePlaceOrder} disabled={loading} style={{ padding: 16, fontSize: 16 }}>
+            <button className="btn-primary" onClick={handlePlaceOrder} disabled={loading || !termsAccepted} style={{ padding: 16, fontSize: 16, opacity: termsAccepted ? 1 : 0.5 }}>
               {loading ? <><div className="spinner" /> Przetwarzanie...</> : `Dalej → Płatność ${method === 'blik' ? 'BLIK' : 'kartą'}`}
             </button>
           </div>

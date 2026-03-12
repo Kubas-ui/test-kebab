@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const crypto = require('crypto');
 
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
@@ -6,10 +7,15 @@ const pool = new Pool({
   max: 1,
 });
 
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password + 'sultan_salt_2024').digest('hex');
+}
+
 async function initDB() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
     await client.query(`CREATE TABLE IF NOT EXISTS orders (
       id               SERIAL PRIMARY KEY,
       order_number     TEXT NOT NULL,
@@ -24,6 +30,7 @@ async function initDB() {
       notes            TEXT,
       created_at       TIMESTAMPTZ DEFAULT NOW()
     )`);
+
     await client.query(`CREATE TABLE IF NOT EXISTS menu_items (
       id                     SERIAL PRIMARY KEY,
       name                   TEXT NOT NULL,
@@ -36,6 +43,7 @@ async function initDB() {
       available              BOOLEAN NOT NULL DEFAULT true,
       allowed_customizations JSONB
     )`);
+
     await client.query(`CREATE TABLE IF NOT EXISTS customization_items (
       id        TEXT NOT NULL,
       category  TEXT NOT NULL,
@@ -45,6 +53,16 @@ async function initDB() {
       PRIMARY KEY (id, category)
     )`);
 
+    await client.query(`CREATE TABLE IF NOT EXISTS users (
+      id                SERIAL PRIMARY KEY,
+      username          TEXT NOT NULL UNIQUE,
+      password_hash     TEXT NOT NULL,
+      role              TEXT NOT NULL DEFAULT 'worker',
+      must_change_pass  BOOLEAN NOT NULL DEFAULT false,
+      created_at        TIMESTAMPTZ DEFAULT NOW()
+    )`);
+
+    // Seed menu
     const { rows: m } = await client.query('SELECT COUNT(*) FROM menu_items');
     if (parseInt(m[0].count) === 0) {
       const ms = [
@@ -64,6 +82,7 @@ async function initDB() {
       }
     }
 
+    // Seed customizations
     const { rows: c } = await client.query('SELECT COUNT(*) FROM customization_items');
     if (parseInt(c[0].count) === 0) {
       const cs = [
@@ -83,6 +102,15 @@ async function initDB() {
         await client.query(`INSERT INTO customization_items (id,category,label,price) VALUES ($1,$2,$3,$4)`,
           [id,cat,label,price]);
       }
+    }
+
+    // Seed default admin
+    const { rows: u } = await client.query('SELECT COUNT(*) FROM users');
+    if (parseInt(u[0].count) === 0) {
+      await client.query(
+        `INSERT INTO users (username, password_hash, role, must_change_pass) VALUES ($1,$2,$3,$4)`,
+        ['admin', hashPassword('admin123'), 'admin', true]
+      );
     }
 
     await client.query('COMMIT');
@@ -106,10 +134,38 @@ function generateOrderNumber() {
   return `KB-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(Math.random()*9000)+1000}`;
 }
 
+// Simple JWT using built-in crypto
+const JWT_SECRET = process.env.JWT_SECRET || 'sultan_jwt_secret_2024';
+
+function createToken(payload) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify({ ...payload, exp: Date.now() + 24*60*60*1000 })).toString('base64url');
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${sig}`;
+}
+
+function verifyToken(token) {
+  try {
+    const [header, body, sig] = token.split('.');
+    const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${header}.${body}`).digest('base64url');
+    if (sig !== expected) return null;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString());
+    if (payload.exp < Date.now()) return null;
+    return payload;
+  } catch { return null; }
+}
+
+function getTokenFromReq(req) {
+  const auth = req.headers['authorization'] || '';
+  if (auth.startsWith('Bearer ')) return auth.slice(7);
+  return null;
+}
+
 const VALID_CATEGORIES = ['bread','sauce','veggies','extras'];
 let dbReady = false;
 async function ensureDB() {
   if (!dbReady) { await initDB(); dbReady = true; }
 }
 
-module.exports = { pool, ensureDB, rowToMenuItem, rowToCustomization, generateOrderNumber, VALID_CATEGORIES };
+module.exports = { pool, ensureDB, rowToMenuItem, rowToCustomization, generateOrderNumber,
+  VALID_CATEGORIES, hashPassword, createToken, verifyToken, getTokenFromReq };

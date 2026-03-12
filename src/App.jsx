@@ -4,17 +4,28 @@ import Cart from './components/Cart.jsx'
 import Payment from './components/Payment.jsx'
 import Success from './components/Success.jsx'
 import Admin from './components/Admin.jsx'
+import Login from './components/Login.jsx'
+import ChangePassword from './components/ChangePassword.jsx'
 
 const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
 
 export default function App() {
-  const [page, setPage] = useState('menu')         // menu | cart | payment | success | admin
+  const [page, setPage] = useState('menu')
   const [cart, setCart] = useState([])
-  const [order, setOrder] = useState(null)          // { id, order_number, total }
+  const [order, setOrder] = useState(null)
   const [menuData, setMenuData] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // ── Fetch menu on mount
+  // Auth state
+  const [auth, setAuth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sultan_auth')
+      return saved ? JSON.parse(saved) : null
+    } catch { return null }
+  })
+  const [showLogin, setShowLogin] = useState(false)
+  const [showChangePass, setShowChangePass] = useState(false)
+
   useEffect(() => {
     fetch(`${API}/menu`)
       .then(r => r.json())
@@ -22,24 +33,40 @@ export default function App() {
       .catch(() => setLoading(false))
   }, [])
 
-  // ── Cart helpers
+  function handleLogin(data) {
+    const authData = { token: data.token, role: data.role, username: data.username }
+    setAuth(authData)
+    localStorage.setItem('sultan_auth', JSON.stringify(authData))
+    setShowLogin(false)
+    if (data.mustChangePass) {
+      setShowChangePass(true)
+    } else {
+      setPage('admin')
+    }
+  }
+
+  function handleChangePassDone() {
+    setShowChangePass(false)
+    setPage('admin')
+  }
+
+  function handleLogout() {
+    setAuth(null)
+    localStorage.removeItem('sultan_auth')
+    setPage('menu')
+  }
+
   function addToCart(item) {
     setCart(prev => {
       const key = item.cartKey
       const existing = prev.find(i => i.cartKey === key)
-      if (existing) {
-        return prev.map(i => i.cartKey === key ? { ...i, qty: i.qty + 1 } : i)
-      }
+      if (existing) return prev.map(i => i.cartKey === key ? { ...i, qty: i.qty + 1 } : i)
       return [...prev, { ...item, qty: 1 }]
     })
   }
 
   function updateQty(cartKey, delta) {
-    setCart(prev =>
-      prev
-        .map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + delta } : i)
-        .filter(i => i.qty > 0)
-    )
+    setCart(prev => prev.map(i => i.cartKey === cartKey ? { ...i, qty: i.qty + delta } : i).filter(i => i.qty > 0))
   }
 
   function clearCart() { setCart([]) }
@@ -58,9 +85,11 @@ export default function App() {
     )
   }
 
+  if (showLogin) return <Login onLogin={handleLogin} />
+  if (showChangePass && auth) return <ChangePassword token={auth.token} onDone={handleChangePassDone} />
+
   return (
     <div style={{ minHeight: '100vh' }}>
-      {/* ── Navbar */}
       <nav style={{
         position: 'sticky', top: 0, zIndex: 50,
         background: 'rgba(7,7,7,0.9)',
@@ -75,8 +104,7 @@ export default function App() {
             <span style={{ fontSize: 28 }}>🥙</span>
             <span style={{
               fontFamily: 'Cormorant Garamond, serif',
-              fontSize: 26,
-              fontWeight: 700,
+              fontSize: 26, fontWeight: 700,
               letterSpacing: '0.12em',
               color: 'var(--gold)',
               textTransform: 'uppercase',
@@ -90,13 +118,23 @@ export default function App() {
               </button>
             ) : (
               <>
-                <button
-                  className="btn-ghost"
-                  onClick={() => setPage('admin')}
-                  style={{ fontSize: 13, padding: '8px 16px' }}
-                >
-                  Panel admina
-                </button>
+                {auth ? (
+                  <button
+                    className="btn-ghost"
+                    onClick={() => setPage('admin')}
+                    style={{ fontSize: 13, padding: '8px 16px' }}
+                  >
+                    Panel ({auth.username})
+                  </button>
+                ) : (
+                  <button
+                    className="btn-ghost"
+                    onClick={() => setShowLogin(true)}
+                    style={{ fontSize: 13, padding: '8px 16px' }}
+                  >
+                    Logowanie
+                  </button>
+                )}
                 <button
                   className="btn-primary"
                   onClick={() => setPage('cart')}
@@ -116,49 +154,38 @@ export default function App() {
                 </button>
               </>
             )}
+            {page === 'admin' && auth && (
+              <button
+                className="btn-ghost"
+                onClick={handleLogout}
+                style={{ fontSize: 12, color: 'var(--red)', borderColor: 'rgba(224,80,80,0.2)' }}
+              >
+                Wyloguj
+              </button>
+            )}
           </div>
         </div>
       </nav>
 
-      {/* ── Pages */}
       {page === 'menu' && (
-        <Menu
-          menuData={menuData}
-          onAddToCart={addToCart}
-          onGoToCart={() => setPage('cart')}
-          cartCount={cartCount}
-        />
+        <Menu menuData={menuData} onAddToCart={addToCart} onGoToCart={() => setPage('cart')} cartCount={cartCount} />
       )}
       {page === 'cart' && (
-        <Cart
-          cart={cart}
-          onUpdateQty={updateQty}
-          onBack={() => setPage('menu')}
-          onCheckout={() => setPage('payment')}
-          cartTotal={cartTotal}
-          customizations={menuData?.customizations}
-        />
+        <Cart cart={cart} onUpdateQty={updateQty} onBack={() => setPage('menu')}
+          onCheckout={() => setPage('payment')} cartTotal={cartTotal} customizations={menuData?.customizations} />
       )}
       {page === 'payment' && (
-        <Payment
-          cart={cart}
-          cartTotal={cartTotal}
-          onBack={() => setPage('cart')}
-          onSuccess={(orderData) => {
-            setOrder(orderData)
-            clearCart()
-            setPage('success')
-          }}
-        />
+        <Payment cart={cart} cartTotal={cartTotal} onBack={() => setPage('cart')}
+          onSuccess={(orderData) => { setOrder(orderData); clearCart(); setPage('success') }} />
       )}
       {page === 'success' && (
-        <Success
-          order={order}
-          onNewOrder={() => { setOrder(null); setPage('menu') }}
-        />
+        <Success order={order} onNewOrder={() => { setOrder(null); setPage('menu') }} />
       )}
-      {page === 'admin' && (
-        <Admin />
+      {page === 'admin' && auth && (
+        <Admin auth={auth} onLogout={handleLogout} />
+      )}
+      {page === 'admin' && !auth && (
+        <Login onLogin={handleLogin} />
       )}
     </div>
   )
