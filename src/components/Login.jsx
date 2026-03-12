@@ -100,9 +100,6 @@ export default function Login({ onLogin }) {
           </button>
         </div>
 
-        <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-3)', marginTop: 24 }}>
-          Domyślne hasło przy pierwszym logowaniu: <strong style={{ color: 'var(--text-2)' }}>admin123</strong>
-        </p>
       </div>
     </div>
   )
