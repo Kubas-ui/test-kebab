@@ -85,6 +85,9 @@ export default function App() {
   const cartCount = cart.reduce((sum, i) => sum + i.qty, 0)
   const cartTotal = cart.reduce((sum, i) => sum + i.itemTotal * i.qty, 0)
 
+  if (showLogin) return <Login onLogin={handleLogin} />
+  if (showChangePass && auth) return <ChangePassword token={auth.token} username={auth.username} onDone={handleChangePassDone} />
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -95,9 +98,6 @@ export default function App() {
       </div>
     )
   }
-
-  if (showLogin) return <Login onLogin={handleLogin} />
-  if (showChangePass && auth) return <ChangePassword token={auth.token} username={auth.username} onDone={handleChangePassDone} />
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -129,15 +129,7 @@ export default function App() {
               </button>
             ) : (
               <>
-                {auth && (
-                  <button
-                    className="btn-ghost"
-                    onClick={() => setPage('admin')}
-                    style={{ fontSize: 13, padding: '8px 16px' }}
-                  >
-                    Panel ({auth.username})
-                  </button>
-                )}
+
                 <button
                   className="btn-primary"
                   onClick={() => setPage('cart')}
