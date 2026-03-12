@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
 
-export default function ChangePassword({ token, onDone }) {
+export default function ChangePassword({ token, username, onDone }) {
   const [newPass, setNewPass] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -22,7 +22,15 @@ export default function ChangePassword({ token, onDone }) {
       })
       const data = await res.json()
       if (!res.ok) return setError(data.error || 'Błąd zmiany hasła')
-      onDone()
+      // Re-login to get fresh token with new password hash
+      const loginRes = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: newPass }),
+      })
+      const loginData = await loginRes.json()
+      if (!loginRes.ok) return setError('Hasło zmienione, zaloguj się ponownie')
+      onDone(loginData)
     } catch {
       setError('Błąd połączenia')
     } finally {
