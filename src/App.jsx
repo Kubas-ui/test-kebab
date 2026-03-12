@@ -33,6 +33,14 @@ export default function App() {
       .catch(() => setLoading(false))
   }, [])
 
+  // Detect /#panel URL
+  useEffect(() => {
+    if (window.location.hash === '#panel') {
+      if (!auth) setShowLogin(true)
+      else setPage('admin')
+    }
+  }, [])
+
   function handleLogin(data) {
     const authData = { token: data.token, role: data.role, username: data.username }
     setAuth(authData)
@@ -118,21 +126,13 @@ export default function App() {
               </button>
             ) : (
               <>
-                {auth ? (
+                {auth && (
                   <button
                     className="btn-ghost"
                     onClick={() => setPage('admin')}
                     style={{ fontSize: 13, padding: '8px 16px' }}
                   >
                     Panel ({auth.username})
-                  </button>
-                ) : (
-                  <button
-                    className="btn-ghost"
-                    onClick={() => setShowLogin(true)}
-                    style={{ fontSize: 13, padding: '8px 16px' }}
-                  >
-                    Logowanie
                   </button>
                 )}
                 <button
