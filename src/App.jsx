@@ -10,10 +10,7 @@ import ChangePassword from './components/ChangePassword.jsx'
 const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
 
 export default function App() {
-  const [page, setPage] = useState(() => {
-    const hasAuth = !!localStorage.getItem('sultan_auth')
-    return (window.location.hash === '#panel' && hasAuth) ? 'admin' : 'menu'
-  })
+  const [page, setPage] = useState('menu')
   const [cart, setCart] = useState([])
   const [order, setOrder] = useState(null)
   const [menuData, setMenuData] = useState(null)
@@ -26,7 +23,7 @@ export default function App() {
       return saved ? JSON.parse(saved) : null
     } catch { return null }
   })
-  const [showLogin, setShowLogin] = useState(() => window.location.hash === '#panel' && !auth)
+  const [showLogin, setShowLogin] = useState(false)
   const [showChangePass, setShowChangePass] = useState(false)
 
   useEffect(() => {
@@ -34,6 +31,16 @@ export default function App() {
       .then(r => r.json())
       .then(data => { setMenuData(data); setLoading(false) })
       .catch(() => setLoading(false))
+
+    // Handle #panel URL
+    if (window.location.hash === '#panel') {
+      const saved = localStorage.getItem('sultan_auth')
+      if (saved) {
+        setPage('admin')
+      } else {
+        setShowLogin(true)
+      }
+    }
   }, [])
 
   function handleLogin(data) {
