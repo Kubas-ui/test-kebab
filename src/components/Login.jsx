@@ -62,7 +62,7 @@ export default function Login({ onLogin }) {
               value={username}
               onChange={e => setUsername(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-              placeholder="admin"
+              placeholder="Login"
               autoFocus
               style={{ width: '100%' }}
             />

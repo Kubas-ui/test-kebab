@@ -59,6 +59,7 @@ export default function App() {
     setAuth(null)
     localStorage.removeItem('sultan_auth')
     setPage('menu')
+    if (window.location.hash === '#panel') setShowLogin(true)
   }
 
   function addToCart(item) {

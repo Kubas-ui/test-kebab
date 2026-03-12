@@ -15,12 +15,15 @@ function parseBody(req) {
   });
 }
 
-function requireAuth(req, role) {
+async function requireAuth(req, role) {
   const token = getTokenFromReq(req);
   if (!token) return null;
   const payload = verifyToken(token);
   if (!payload) return null;
   if (role && payload.role !== role) return null;
+  // Verify password hash still matches DB - invalidates token after password change
+  const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [payload.id]);
+  if (!rows.length || rows[0].password_hash !== payload.passwordHash) return null;
   return payload;
 }
 
@@ -46,13 +49,13 @@ module.exports = async (req, res) => {
     if (!rows.length) return send(res, 401, { error: 'Nieprawidłowy login lub hasło' });
     const user = rows[0];
     if (user.password_hash !== hashPassword(password)) return send(res, 401, { error: 'Nieprawidłowy login lub hasło' });
-    const token = createToken({ id: user.id, username: user.username, role: user.role });
+    const token = createToken({ id: user.id, username: user.username, role: user.role, passwordHash: user.password_hash });
     return send(res, 200, { token, role: user.role, username: user.username, mustChangePass: user.must_change_pass });
   }
 
   // ── POST /api/auth/change-password ────────────────────────────────────────
   if (parts[0]==='auth' && parts[1]==='change-password' && method==='POST') {
-    const user = requireAuth(req);
+    const user = await requireAuth(req);
     if (!user) return send(res, 401, { error: 'Brak autoryzacji' });
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) return send(res, 400, { error: 'Hasło musi mieć min. 6 znaków' });
@@ -63,7 +66,7 @@ module.exports = async (req, res) => {
 
   // ── GET /api/users ─────────────────────────────────────────────────────────
   if (parts[0]==='users' && !parts[1] && method==='GET') {
-    const user = requireAuth(req, 'admin');
+    const user = await requireAuth(req, 'admin');
     if (!user) return send(res, 401, { error: 'Brak autoryzacji' });
     const { rows } = await pool.query('SELECT id,username,role,created_at FROM users ORDER BY id');
     return send(res, 200, rows);
@@ -71,7 +74,7 @@ module.exports = async (req, res) => {
 
   // ── POST /api/users ────────────────────────────────────────────────────────
   if (parts[0]==='users' && !parts[1] && method==='POST') {
-    const user = requireAuth(req, 'admin');
+    const user = await requireAuth(req, 'admin');
     if (!user) return send(res, 401, { error: 'Brak autoryzacji' });
     const { username, password, role } = req.body;
     if (!username || !password) return send(res, 400, { error: 'Brakuje danych' });
@@ -90,7 +93,7 @@ module.exports = async (req, res) => {
 
   // ── DELETE /api/users/:id ──────────────────────────────────────────────────
   if (parts[0]==='users' && parts[1] && method==='DELETE') {
-    const user = requireAuth(req, 'admin');
+    const user = await requireAuth(req, 'admin');
     if (!user) return send(res, 401, { error: 'Brak autoryzacji' });
     if (String(user.id) === parts[1]) return send(res, 400, { error: 'Nie możesz usunąć własnego konta' });
     const { rowCount } = await pool.query('DELETE FROM users WHERE id=$1', [parts[1]]);
@@ -109,14 +112,14 @@ module.exports = async (req, res) => {
 
   // ── GET /api/menu/items ────────────────────────────────────────────────────
   if (parts[0]==='menu' && parts[1]==='items' && !parts[2] && method==='GET') {
-    if (!requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const { rows } = await pool.query('SELECT * FROM menu_items ORDER BY id');
     return send(res, 200, rows.map(rowToMenuItem));
   }
 
   // ── POST /api/menu/items ───────────────────────────────────────────────────
   if (parts[0]==='menu' && parts[1]==='items' && !parts[2] && method==='POST') {
-    if (!requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
     const { name, description, price, category, emoji, spicy, popular, available } = req.body;
     if (!name||!description||!price) return send(res, 400, { error: 'Brakuje wymaganych pól' });
     const { rows } = await pool.query(
@@ -128,7 +131,7 @@ module.exports = async (req, res) => {
 
   // ── PUT /api/menu/items/:id ────────────────────────────────────────────────
   if (parts[0]==='menu' && parts[1]==='items' && parts[2] && method==='PUT') {
-    if (!requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
     const id = parts[2];
     const { name, description, price, category, emoji, spicy, popular, available, allowedCustomizations } = req.body;
     const { rows: ex } = await pool.query('SELECT * FROM menu_items WHERE id=$1', [id]);
@@ -150,7 +153,7 @@ module.exports = async (req, res) => {
 
   // ── DELETE /api/menu/items/:id ─────────────────────────────────────────────
   if (parts[0]==='menu' && parts[1]==='items' && parts[2] && method==='DELETE') {
-    if (!requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
     const { rowCount } = await pool.query('DELETE FROM menu_items WHERE id=$1', [parts[2]]);
     if (!rowCount) return send(res, 404, { error: 'Nie znaleziono' });
     return send(res, 200, { success: true });
@@ -158,7 +161,7 @@ module.exports = async (req, res) => {
 
   // ── GET /api/customizations/:category ─────────────────────────────────────
   if (parts[0]==='customizations' && parts[1] && !parts[2] && method==='GET') {
-    if (!requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const cat = parts[1];
     if (!VALID_CATEGORIES.includes(cat)) return send(res, 400, { error: 'Zła kategoria' });
     const { rows } = await pool.query('SELECT * FROM customization_items WHERE category=$1 ORDER BY id', [cat]);
@@ -167,7 +170,7 @@ module.exports = async (req, res) => {
 
   // ── POST /api/customizations/:category ────────────────────────────────────
   if (parts[0]==='customizations' && parts[1] && !parts[2] && method==='POST') {
-    if (!requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
     const cat = parts[1];
     if (!VALID_CATEGORIES.includes(cat)) return send(res, 400, { error: 'Zła kategoria' });
     const { label, price, available } = req.body;
@@ -182,7 +185,7 @@ module.exports = async (req, res) => {
 
   // ── PUT /api/customizations/:category/:id ─────────────────────────────────
   if (parts[0]==='customizations' && parts[1] && parts[2] && method==='PUT') {
-    if (!requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
     const [,cat,id] = parts;
     if (!VALID_CATEGORIES.includes(cat)) return send(res, 400, { error: 'Zła kategoria' });
     const { label, price, available } = req.body;
@@ -199,7 +202,7 @@ module.exports = async (req, res) => {
 
   // ── DELETE /api/customizations/:category/:id ───────────────────────────────
   if (parts[0]==='customizations' && parts[1] && parts[2] && method==='DELETE') {
-    if (!requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req, 'admin')) return send(res, 401, { error: 'Brak autoryzacji' });
     const [,cat,id] = parts;
     if (!VALID_CATEGORIES.includes(cat)) return send(res, 400, { error: 'Zła kategoria' });
     const { rowCount } = await pool.query('DELETE FROM customization_items WHERE id=$1 AND category=$2', [id,cat]);
@@ -209,7 +212,7 @@ module.exports = async (req, res) => {
 
   // ── GET /api/orders ────────────────────────────────────────────────────────
   if (parts[0]==='orders' && !parts[1] && method==='GET') {
-    if (!requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const { status } = qs;
     const q = status ? 'SELECT * FROM orders WHERE order_status=$1 ORDER BY created_at DESC LIMIT 50'
                      : 'SELECT * FROM orders ORDER BY created_at DESC LIMIT 50';
@@ -233,7 +236,7 @@ module.exports = async (req, res) => {
 
   // ── GET /api/orders/:id ────────────────────────────────────────────────────
   if (parts[0]==='orders' && parts[1] && !parts[2] && method==='GET') {
-    if (!requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const { rows } = await pool.query('SELECT * FROM orders WHERE id=$1', [parts[1]]);
     if (!rows.length) return send(res, 404, { error: 'Nie znaleziono' });
     return send(res, 200, {...rows[0], total:parseFloat(rows[0].total)});
@@ -241,7 +244,7 @@ module.exports = async (req, res) => {
 
   // ── PATCH /api/orders/:id/status ──────────────────────────────────────────
   if (parts[0]==='orders' && parts[1] && parts[2]==='status' && method==='PATCH') {
-    if (!requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const { status } = req.body;
     const valid = ['new','confirmed','preparing','ready','delivered','cancelled'];
     if (!valid.includes(status)) return send(res, 400, { error: 'Zły status' });
@@ -273,7 +276,7 @@ module.exports = async (req, res) => {
 
   // ── GET /api/stats ─────────────────────────────────────────────────────────
   if (parts[0]==='stats' && method==='GET') {
-    if (!requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
+    if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const today = new Date().toISOString().slice(0,10);
     const [t,td,r,rd,p] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM orders'),

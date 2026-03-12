@@ -104,14 +104,22 @@ async function initDB() {
       }
     }
 
-    // Seed default admin
+    // Seed/sync admin password from env
     const adminPassword = process.env.ADMIN_PASSWORD;
     if (!adminPassword) throw new Error('Brak zmiennej środowiskowej ADMIN_PASSWORD — ustaw ją w Vercel przed deployem');
-    const { rows: u } = await client.query('SELECT COUNT(*) FROM users');
+    const { rows: u } = await client.query('SELECT COUNT(*) FROM users WHERE username=$1', ['admin']);
     if (parseInt(u[0].count) === 0) {
+      // Nowa instalacja — twórz admina z hasłem z env
       await client.query(
         `INSERT INTO users (username, password_hash, role, must_change_pass) VALUES ($1,$2,$3,$4)`,
         ['admin', hashPassword(adminPassword), 'admin', true]
+      );
+    } else {
+      // Admin istnieje — aktualizuj hasło TYLKO jeśli jeszcze nie zmienił (must_change_pass=true)
+      // To pozwala też na reset hasła przez zmianę ADMIN_PASSWORD w Vercel + redeploy
+      await client.query(
+        `UPDATE users SET password_hash=$1 WHERE username='admin' AND must_change_pass=true`,
+        [hashPassword(adminPassword)]
       );
     }
 
