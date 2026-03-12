@@ -105,11 +105,13 @@ async function initDB() {
     }
 
     // Seed default admin
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminPassword) throw new Error('Brak zmiennej środowiskowej ADMIN_PASSWORD — ustaw ją w Vercel przed deployem');
     const { rows: u } = await client.query('SELECT COUNT(*) FROM users');
     if (parseInt(u[0].count) === 0) {
       await client.query(
         `INSERT INTO users (username, password_hash, role, must_change_pass) VALUES ($1,$2,$3,$4)`,
-        ['admin', hashPassword(process.env.ADMIN_PASSWORD || 'admin123'), 'admin', true]
+        ['admin', hashPassword(adminPassword), 'admin', true]
       );
     }
 
