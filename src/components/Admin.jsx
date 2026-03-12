@@ -36,14 +36,37 @@ export default function Admin({ auth, onLogout }) {
   const [tab, setTab] = useState('orders')
   const [newOrderPopup, setNewOrderPopup] = useState(null)
   const lastOrderIdRef = useRef(null)
+  const authRef = useRef(auth)
   const isAdmin = auth?.role === 'admin'
+
+  // Keep authRef current
+  useEffect(() => { authRef.current = auth }, [auth])
 
   // Poll for new orders every 15s
   useEffect(() => {
+    function playSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.frequency.setValueAtTime(880, ctx.currentTime)
+        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.15)
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3)
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.6)
+      } catch {}
+    }
+
     async function checkNewOrders() {
+      const token = authRef.current?.token
+      if (!token) return
       try {
         const res = await fetch(`${API}/orders`, {
-          headers: { 'Authorization': `Bearer ${auth?.token}` }
+          headers: { 'Authorization': `Bearer ${token}` }
         })
         if (!res.ok) return
         const orders = await res.json()
@@ -53,31 +76,21 @@ export default function Admin({ auth, onLogout }) {
           lastOrderIdRef.current = newest.id
           return
         }
-        if (newest.id > lastOrderIdRef.current && newest.order_status === 'new') {
+        if (newest.id > lastOrderIdRef.current) {
           lastOrderIdRef.current = newest.id
-          setNewOrderPopup(newest)
-          // Play sound
-          try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)()
-            const osc = ctx.createOscillator()
-            const gain = ctx.createGain()
-            osc.connect(gain)
-            gain.connect(ctx.destination)
-            osc.frequency.setValueAtTime(880, ctx.currentTime)
-            osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.15)
-            osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3)
-            gain.gain.setValueAtTime(0.3, ctx.currentTime)
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
-            osc.start(ctx.currentTime)
-            osc.stop(ctx.currentTime + 0.6)
-          } catch {}
+          if (newest.order_status === 'new') {
+            setNewOrderPopup(newest)
+            playSound()
+          }
         }
       } catch {}
     }
-    checkNewOrders()
+
+    // Initial check after 2s (żeby nie blokować ładowania)
+    const init = setTimeout(checkNewOrders, 2000)
     const interval = setInterval(checkNewOrders, 15000)
-    return () => clearInterval(interval)
-  }, [auth])
+    return () => { clearTimeout(init); clearInterval(interval) }
+  }, [])
 
   const tabs = [
     { id: 'orders', label: '📋 Zamówienia' },
