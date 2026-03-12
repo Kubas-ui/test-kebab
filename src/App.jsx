@@ -23,7 +23,7 @@ export default function App() {
       return saved ? JSON.parse(saved) : null
     } catch { return null }
   })
-  const [showLogin, setShowLogin] = useState(false)
+  const [showLogin, setShowLogin] = useState(() => window.location.hash === '#panel' && !auth)
   const [showChangePass, setShowChangePass] = useState(false)
 
   useEffect(() => {
@@ -33,12 +33,9 @@ export default function App() {
       .catch(() => setLoading(false))
   }, [])
 
-  // Detect /#panel URL
+  // Detect /#panel URL - redirect if already logged in
   useEffect(() => {
-    if (window.location.hash === '#panel') {
-      if (!auth) setShowLogin(true)
-      else setPage('admin')
-    }
+    if (window.location.hash === '#panel' && auth) setPage('admin')
   }, [])
 
   function handleLogin(data) {
