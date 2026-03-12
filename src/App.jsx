@@ -50,7 +50,12 @@ export default function App() {
     }
   }
 
-  function handleChangePassDone() {
+  function handleChangePassDone(newAuthData) {
+    if (newAuthData) {
+      const authData = { token: newAuthData.token, role: newAuthData.role, username: newAuthData.username }
+      setAuth(authData)
+      localStorage.setItem('sultan_auth', JSON.stringify(authData))
+    }
     setShowChangePass(false)
     setPage('admin')
   }
@@ -92,7 +97,7 @@ export default function App() {
   }
 
   if (showLogin) return <Login onLogin={handleLogin} />
-  if (showChangePass && auth) return <ChangePassword token={auth.token} onDone={handleChangePassDone} />
+  if (showChangePass && auth) return <ChangePassword token={auth.token} username={auth.username} onDone={handleChangePassDone} />
 
   return (
     <div style={{ minHeight: '100vh' }}>
