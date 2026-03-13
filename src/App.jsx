@@ -30,6 +30,15 @@ export default function App() {
       .then(r => r.json())
       .then(data => { setMenuData(data); setLoading(false) })
       .catch(() => setLoading(false))
+
+    function onHashChange() {
+      if (window.location.hash === '#panel') {
+        if (getSavedAuth()) setPage('admin')
+        else setShowLogin(true)
+      }
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
   function handleLogin(data) {
