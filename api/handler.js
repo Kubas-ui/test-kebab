@@ -33,15 +33,15 @@ async function calcTotal(items) {
   try {
     let total = 0;
     for (const item of items) {
-      // item.name matches menu_items.name
       const { rows } = await pool.query('SELECT price FROM menu_items WHERE name=$1 AND available=true', [item.name]);
       if (!rows.length) return null;
       let itemPrice = parseFloat(rows[0].price);
-      // Add customization prices
       if (item.customization) {
-        for (const [cat, ids] of Object.entries(item.customization)) {
-          if (!Array.isArray(ids)) continue;
+        for (const [cat, val] of Object.entries(item.customization)) {
+          // bread/sauce są stringiem, veggies/extras są tablicą
+          const ids = Array.isArray(val) ? val : (val ? [val] : []);
           for (const id of ids) {
+            if (!id) continue;
             const { rows: cr } = await pool.query(
               'SELECT price FROM customization_items WHERE id=$1 AND category=$2 AND available=true', [id, cat]
             );
@@ -52,7 +52,7 @@ async function calcTotal(items) {
       total += itemPrice * (item.qty || 1);
     }
     return Math.round(total * 100) / 100;
-  } catch { return null; }
+  } catch(e) { console.error('calcTotal error:', e); return null; }
 }
 
 module.exports = async (req, res) => {
