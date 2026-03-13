@@ -1077,7 +1077,7 @@ function OrderRow({ order, isSelected, isUpdating, onClick, onStatusUpdate }) {
       {next && (
         <button className="btn-primary" style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}
           onClick={e => { e.stopPropagation(); onStatusUpdate(order.id, next) }} disabled={isUpdating}>
-          {isUpdating ? <div className="spinner" style={{ width: 13, height: 13 }} /> : `→ ${STATUS_CONFIG[next].label}`}
+          {isUpdating ? <div className="spinner" style={{ width: 13, height: 13 }} /> : NEXT_LABEL[order.order_status]}
         </button>
       )}
     </div>
