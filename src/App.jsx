@@ -123,7 +123,11 @@ export default function App() {
               </button>
             ) : (
               <>
-
+                {auth && (
+                  <button className="btn-ghost" onClick={() => setPage('admin')} style={{ fontSize: 13, padding: '8px 16px' }}>
+                    Panel zamówień
+                  </button>
+                )}
                 <button
                   className="btn-primary"
                   onClick={() => setPage('cart')}
