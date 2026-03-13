@@ -64,6 +64,7 @@ export default function App() {
   }
 
   function handleLogout() {
+    localStorage.setItem('sultan_logout_time', new Date().toISOString())
     setAuth(null)
     localStorage.removeItem('sultan_auth')
     setPage('menu')
