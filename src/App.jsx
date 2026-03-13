@@ -9,38 +9,27 @@ import ChangePassword from './components/ChangePassword.jsx'
 
 const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api'
 
+// Odczyt przed pierwszym renderem — synchroniczny
+function getSavedAuth() {
+  try { return JSON.parse(localStorage.getItem('sultan_auth')) } catch { return null }
+}
+const IS_PANEL = window.location.hash === '#panel'
+
 export default function App() {
-  const [page, setPage] = useState('menu')
+  const [auth, setAuth] = useState(getSavedAuth)
+  const [page, setPage] = useState(() => IS_PANEL && getSavedAuth() ? 'admin' : 'menu')
+  const [showLogin, setShowLogin] = useState(() => IS_PANEL && !getSavedAuth())
+  const [showChangePass, setShowChangePass] = useState(false)
   const [cart, setCart] = useState([])
   const [order, setOrder] = useState(null)
   const [menuData, setMenuData] = useState(null)
   const [loading, setLoading] = useState(true)
-
-  // Auth state
-  const [auth, setAuth] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sultan_auth')
-      return saved ? JSON.parse(saved) : null
-    } catch { return null }
-  })
-  const [showLogin, setShowLogin] = useState(false)
-  const [showChangePass, setShowChangePass] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/menu`)
       .then(r => r.json())
       .then(data => { setMenuData(data); setLoading(false) })
       .catch(() => setLoading(false))
-
-    // Handle #panel URL
-    if (window.location.hash === '#panel') {
-      const saved = localStorage.getItem('sultan_auth')
-      if (saved) {
-        setPage('admin')
-      } else {
-        setShowLogin(true)
-      }
-    }
   }, [])
 
   function handleLogin(data) {
