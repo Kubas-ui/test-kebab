@@ -128,17 +128,13 @@ async function initDB() {
       );
     } else {
       // Migracja starych haseł SHA-256 (bez dwukropka) na PBKDF2
+      // WAŻNE: hashPassword() generuje nowy losowy salt — nie wywołuj go więcej niż raz per instalację!
       if (!u[0].password_hash.includes(':')) {
         await client.query(
           `UPDATE users SET password_hash=$1, must_change_pass=true WHERE username='admin'`,
           [hashPassword(adminPassword)]
         );
-      } else if (u[0].must_change_pass) {
-        // Admin jeszcze nie zmienił hasła — aktualizuj z env
-        await client.query(
-          `UPDATE users SET password_hash=$1 WHERE username='admin'`,
-          [hashPassword(adminPassword)]
-        );
+        // Hash już jest w formacie PBKDF2 — nie aktualizuj przy kolejnych cold startach
       }
     }
     // Migracja wszystkich innych użytkowników ze starym hashem
