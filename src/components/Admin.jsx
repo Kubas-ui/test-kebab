@@ -98,8 +98,20 @@ export default function Admin({ auth, onLogout }) {
         const newOrders = orders.filter(o => o.order_status === 'new')
 
         if (lastOrderIdRef.current === null) {
-          // Pierwsze sprawdzenie — tylko ustaw baseline, nie pokazuj popupu
+          // Pierwsze sprawdzenie — ustaw baseline
           lastOrderIdRef.current = orders.length ? orders[0].id : 0
+          // Pokaż popup tylko dla zamówień złożonych gdy kasjer był wylogowany
+          const logoutTime = localStorage.getItem('sultan_logout_time')
+          if (logoutTime) {
+            localStorage.removeItem('sultan_logout_time')
+            const missedNew = orders.filter(o =>
+              o.order_status === 'new' && new Date(o.created_at) > new Date(logoutTime)
+            )
+            if (missedNew.length > 0) {
+              setNewOrderPopup(missedNew[0])
+              playSound()
+            }
+          }
           return
         }
 
