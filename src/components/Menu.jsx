@@ -1,23 +1,18 @@
 import { useState } from 'react'
 import Customizer from './Customizer.jsx'
 
-export default function Menu({ menuData, onAddToCart, cartCount }) {
-  const [selected, setSelected] = useState(null)   // item to customize
-  const [toast, setToast] = useState('')
+export default function Menu({ menuData, onAddToCart, onGoToCart, cartCount }) {
+  const [selected, setSelected] = useState(null)
+  const [cartPopup, setCartPopup] = useState(null) // { name }
 
   if (!menuData) return null
 
   const { menu, customizations } = menuData
 
-  function showToast(msg) {
-    setToast(msg)
-    setTimeout(() => setToast(''), 2200)
-  }
-
   function handleAdd(item, customization, itemTotal, cartKey) {
     onAddToCart({ ...item, customization, itemTotal, cartKey })
     setSelected(null)
-    showToast(`${item.name} dodany do koszyka 🥙`)
+    setCartPopup({ name: item.name })
   }
 
   return (
@@ -91,10 +86,35 @@ export default function Menu({ menuData, onAddToCart, cartCount }) {
         />
       )}
 
-      {/* ── Toast ─────────────────────────────────── */}
-      {toast && (
-        <div className="toast" style={{ borderColor: 'rgba(201,168,76,0.3)' }}>
-          {toast}
+      {cartPopup && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.6)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setCartPopup(null)}>
+          <div style={{
+            background: 'var(--bg-1)', border: '1px solid var(--gold)',
+            borderRadius: 16, padding: '32px 36px', maxWidth: 340, width: '90%',
+            textAlign: 'center', boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🥙</div>
+            <p style={{ fontSize: 16, color: 'var(--text-1)', fontWeight: 600, marginBottom: 4 }}>
+              {cartPopup.name}
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 24 }}>
+              dodany do koszyka
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn-ghost" onClick={() => setCartPopup(null)}
+                style={{ flex: 1, padding: '12px' }}>
+                Kontynuuj zakupy
+              </button>
+              <button className="btn-primary" onClick={() => { setCartPopup(null); onGoToCart() }}
+                style={{ flex: 1, padding: '12px' }}>
+                🛒 Przejdź do koszyka
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
