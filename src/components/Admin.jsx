@@ -17,7 +17,7 @@ const STATUS_DISPLAY = {
   cancelled: 'Anulowane',
 }
 const NEXT_STATUS = { new: 'confirmed', confirmed: 'delivered' }
-const NEXT_LABEL  = { new: '✓ Potwierdź zamówienie', confirmed: '📦 Wydaj zamówienie' }
+const NEXT_LABEL  = { new: 'Potwierdź', confirmed: 'Wydaj' }
 
 const MENU_CATEGORIES = [
   { id: 'classic', label: 'Klasyczny' }, { id: 'spicy',   label: 'Ostry' },
@@ -98,12 +98,8 @@ export default function Admin({ auth, onLogout }) {
         const newOrders = orders.filter(o => o.order_status === 'new')
 
         if (lastOrderIdRef.current === null) {
-          // Pierwsze sprawdzenie — ustaw baseline i pokaż popup jeśli jest nowe zamówienie
+          // Pierwsze sprawdzenie — tylko ustaw baseline, nie pokazuj popupu
           lastOrderIdRef.current = orders.length ? orders[0].id : 0
-          if (newOrders.length > 0) {
-            setNewOrderPopup(newOrders[0])
-            playSound()
-          }
           return
         }
 
