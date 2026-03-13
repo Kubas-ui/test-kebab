@@ -52,36 +52,8 @@ export default function Payment({ cart, cartTotal, onBack, onSuccess }) {
     if (!deliveryCity.trim()) return setError('Podaj miasto')
     if (!termsAccepted) return setError('Zaakceptuj regulamin i politykę prywatności')
 
-    setLoading(true)
-    try {
-      const res = await fetch(`${API}/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          items: cart.map(i => ({
-            name: i.name, qty: i.qty, customization: i.customization, price: i.itemTotal,
-          })),
-          total: cartTotal,
-          payment_method: method,
-          delivery_address: {
-            street: deliveryStreet.trim(),
-            number: deliveryNumber.trim(),
-            city: deliveryCity.trim(),
-          },
-          notes: notes || null,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setOrderId(data.id)
-      setStep('payment')
-    } catch (e) {
-      setError(e.message || 'Błąd połączenia z serwerem')
-    } finally {
-      setLoading(false)
-    }
+    // Walidacja OK - przechodzimy do płatności bez tworzenia zamówienia
+    setStep('payment')
   }
 
   // ── Step 2a: BLIK payment
@@ -93,11 +65,19 @@ export default function Payment({ cart, cartTotal, onBack, onSuccess }) {
       const res = await fetch(`${API}/payments/blik`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: blikCode, orderId }),
+        body: JSON.stringify({
+          code: blikCode,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          items: cart.map(i => ({ name: i.name, qty: i.qty, customization: i.customization, price: i.itemTotal })),
+          total: cartTotal,
+          delivery_address: { street: deliveryStreet.trim(), number: deliveryNumber.trim(), city: deliveryCity.trim() },
+          notes: notes || null,
+        }),
       })
       const data = await res.json()
       if (!res.ok) { setStep('payment'); return setError(data.error) }
-      onSuccess({ id: orderId, order_number: data.transactionId, total: cartTotal, payment_method: 'BLIK' })
+      onSuccess({ id: data.id, order_number: data.order_number, total: cartTotal, payment_method: 'BLIK' })
     } catch (e) {
       setStep('payment'); setError('Błąd płatności')
     }
@@ -112,11 +92,19 @@ export default function Payment({ cart, cartTotal, onBack, onSuccess }) {
       const res = await fetch(`${API}/payments/card`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardNumber, cardHolder, expiry, cvv, orderId }),
+        body: JSON.stringify({
+          cardNumber, cardHolder, expiry, cvv,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          items: cart.map(i => ({ name: i.name, qty: i.qty, customization: i.customization, price: i.itemTotal })),
+          total: cartTotal,
+          delivery_address: { street: deliveryStreet.trim(), number: deliveryNumber.trim(), city: deliveryCity.trim() },
+          notes: notes || null,
+        }),
       })
       const data = await res.json()
       if (!res.ok) { setStep('payment'); return setError(data.error) }
-      onSuccess({ id: orderId, order_number: data.transactionId, total: cartTotal, payment_method: 'Karta' })
+      onSuccess({ id: data.id, order_number: data.order_number, total: cartTotal, payment_method: 'Karta' })
     } catch (e) {
       setStep('payment'); setError('Błąd płatności')
     }
