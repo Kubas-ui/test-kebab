@@ -153,8 +153,8 @@ export default function Admin({ auth, onLogout }) {
           }}>{t.label}</button>
         ))}
       </div>
-      {tab === 'orders' && <OrdersPanel auth={auth} />}
-      {tab === 'cms'    && isAdmin && <CMSPanel auth={auth} />}
+      {tab === 'orders' && <OrdersPanel auth={auth} onLogout={onLogout} />}
+      {tab === 'cms'    && isAdmin && <CMSPanel auth={auth} onLogout={onLogout} />}
       {tab === 'users'  && isAdmin && <UsersPanel auth={auth} />}
     </div>
   )
@@ -162,7 +162,7 @@ export default function Admin({ auth, onLogout }) {
 
 // ─── CMS Panel ────────────────────────────────────────────────────────────────
 
-function CMSPanel({ auth }) {
+function CMSPanel({ auth, onLogout }) {
   const [section, setSection] = useState('menu')
 
   return (
@@ -853,7 +853,7 @@ function LoadingSpinner() {
 
 // ─── Orders Panel (unchanged) ─────────────────────────────────────────────────
 
-function OrdersPanel({ auth }) {
+function OrdersPanel({ auth, onLogout }) {
   const [orders, setOrders] = useState([])
   const [stats, setStats] = useState(null)
   const [filter, setFilter] = useState('all')
@@ -869,7 +869,9 @@ function OrdersPanel({ auth }) {
         fetch(`${API}/orders`, { headers }),
         fetch(`${API}/stats`, { headers })
       ])
+      if (oRes.status === 401) { onLogout?.(); return }
       const [oData, sData] = await Promise.all([oRes.json(), sRes.json()])
+      if (!Array.isArray(oData)) { onLogout?.(); return }
       setOrders(oData); setStats(sData); setLastRefresh(new Date())
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
