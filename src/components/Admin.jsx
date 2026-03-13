@@ -5,14 +5,13 @@ const API = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api`
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG = {
-  new:        { label: 'Nowe',            color: 'var(--blue)',   bg: 'rgba(76,143,232,0.1)', icon: '🔔' },
-  confirmed:  { label: 'Potwierdzone',    color: 'var(--gold)',   bg: 'var(--gold-dim)',       icon: '✓'  },
-  preparing:  { label: 'W przygotowaniu', color: '#e8a50a',       bg: 'rgba(232,165,10,0.1)', icon: '🔥' },
-  ready:      { label: 'Gotowe',          color: 'var(--green)',  bg: 'rgba(76,175,125,0.1)', icon: '📦' },
-  delivered:  { label: 'Wydane',          color: 'var(--text-3)', bg: 'var(--bg-3)',           icon: '✓'  },
-  cancelled:  { label: 'Anulowane',       color: 'var(--red)',    bg: 'rgba(224,80,80,0.08)', icon: '✕'  },
+  new:        { label: 'Nowe',        color: 'var(--blue)',   bg: 'rgba(76,143,232,0.1)', icon: '🔔' },
+  confirmed:  { label: 'Potwierdzone',color: 'var(--gold)',   bg: 'var(--gold-dim)',       icon: '✓'  },
+  delivered:  { label: 'Wydane',      color: 'var(--green)',  bg: 'rgba(76,175,125,0.1)', icon: '📦' },
+  cancelled:  { label: 'Anulowane',   color: 'var(--red)',    bg: 'rgba(224,80,80,0.08)', icon: '✕'  },
 }
-const NEXT_STATUS = { new: 'confirmed', confirmed: 'preparing', preparing: 'ready', ready: 'delivered' }
+const NEXT_STATUS = { new: 'confirmed', confirmed: 'delivered' }
+const NEXT_LABEL  = { new: 'Potwierdź zamówienie', confirmed: 'Wydaj zamówienie' }
 
 const MENU_CATEGORIES = [
   { id: 'classic', label: 'Klasyczny' }, { id: 'spicy',   label: 'Ostry' },
@@ -47,17 +46,18 @@ export default function Admin({ auth, onLogout }) {
     function playSound() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.frequency.setValueAtTime(880, ctx.currentTime)
-        osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.15)
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.3)
-        gain.gain.setValueAtTime(0.3, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6)
-        osc.start(ctx.currentTime)
-        osc.stop(ctx.currentTime + 0.6)
+        // 3 loud beeps
+        ;[0, 0.35, 0.7].forEach(delay => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.setValueAtTime(1100, ctx.currentTime + delay)
+          gain.gain.setValueAtTime(0.8, ctx.currentTime + delay)
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.25)
+          osc.start(ctx.currentTime + delay)
+          osc.stop(ctx.currentTime + delay + 0.25)
+        })
       } catch {}
     }
 
@@ -1005,7 +1005,7 @@ function OrdersPanel({ auth, onLogout }) {
           {NEXT_STATUS[selected.order_status] && (
             <button className="btn-primary" style={{ width: '100%', marginTop: 8 }}
               onClick={() => updateStatus(selected.id, NEXT_STATUS[selected.order_status])} disabled={updating === selected.id}>
-              {updating === selected.id ? <><div className="spinner" /> Aktualizacja...</> : `→ ${STATUS_CONFIG[NEXT_STATUS[selected.order_status]].label}`}
+              {updating === selected.id ? <><div className="spinner" /> Aktualizacja...</> : NEXT_LABEL[selected.order_status]}
             </button>
           )}
           {!['cancelled', 'delivered'].includes(selected.order_status) && (
