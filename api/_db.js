@@ -175,8 +175,10 @@ function generateOrderNumber() {
 }
 
 // Simple JWT using built-in crypto
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) throw new Error('Brak zmiennej środowiskowej JWT_SECRET');
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  console.warn('[SULTAN] Brak JWT_SECRET w env - ustaw zmienną w Vercel!');
+  return 'sultan_default_jwt_' + require('crypto').randomBytes(8).toString('hex');
+})();
 
 function createToken(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
