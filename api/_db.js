@@ -7,8 +7,18 @@ const pool = new Pool({
   max: 1,
 });
 
-function hashPassword(password) {
-  return crypto.createHash('sha256').update(password + 'sultan_salt_2024').digest('hex');
+function hashPassword(password, salt) {
+  if (!salt) salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  // Support old SHA-256 format (no colon separator with 16-char hex salt)
+  if (!stored.includes(':')) return false;
+  const [salt] = stored.split(':');
+  const check = hashPassword(password, salt);
+  return check === stored;
 }
 
 async function initDB() {
@@ -61,6 +71,8 @@ async function initDB() {
       must_change_pass  BOOLEAN NOT NULL DEFAULT false,
       created_at        TIMESTAMPTZ DEFAULT NOW()
     )`);
+    // Migrate column if needed (old installations)
+    await client.query(`ALTER TABLE users ALTER COLUMN password_hash TYPE TEXT`).catch(()=>{});
 
     // Seed menu
     const { rows: m } = await client.query('SELECT COUNT(*) FROM menu_items');
@@ -107,19 +119,37 @@ async function initDB() {
     // Seed/sync admin password from env
     const adminPassword = process.env.ADMIN_PASSWORD;
     if (!adminPassword) throw new Error('Brak zmiennej środowiskowej ADMIN_PASSWORD — ustaw ją w Vercel przed deployem');
-    const { rows: u } = await client.query('SELECT COUNT(*) FROM users WHERE username=$1', ['admin']);
-    if (parseInt(u[0].count) === 0) {
+    const { rows: u } = await client.query('SELECT * FROM users WHERE username=$1', ['admin']);
+    if (u.length === 0) {
       // Nowa instalacja — twórz admina z hasłem z env
       await client.query(
         `INSERT INTO users (username, password_hash, role, must_change_pass) VALUES ($1,$2,$3,$4)`,
         ['admin', hashPassword(adminPassword), 'admin', true]
       );
     } else {
-      // Admin istnieje — aktualizuj hasło TYLKO jeśli jeszcze nie zmienił (must_change_pass=true)
-      // To pozwala też na reset hasła przez zmianę ADMIN_PASSWORD w Vercel + redeploy
+      // Migracja starych haseł SHA-256 (bez dwukropka) na PBKDF2
+      if (!u[0].password_hash.includes(':')) {
+        await client.query(
+          `UPDATE users SET password_hash=$1, must_change_pass=true WHERE username='admin'`,
+          [hashPassword(adminPassword)]
+        );
+      } else if (u[0].must_change_pass) {
+        // Admin jeszcze nie zmienił hasła — aktualizuj z env
+        await client.query(
+          `UPDATE users SET password_hash=$1 WHERE username='admin'`,
+          [hashPassword(adminPassword)]
+        );
+      }
+    }
+    // Migracja wszystkich innych użytkowników ze starym hashem
+    const { rows: oldUsers } = await client.query(
+      `SELECT id FROM users WHERE username!='admin' AND password_hash NOT LIKE '%:%'`
+    );
+    for (const ou of oldUsers) {
+      // Reset hasła do tymczasowego — muszą zmienić przy następnym logowaniu
       await client.query(
-        `UPDATE users SET password_hash=$1 WHERE username='admin' AND must_change_pass=true`,
-        [hashPassword(adminPassword)]
+        `UPDATE users SET password_hash=$1, must_change_pass=true WHERE id=$2`,
+        [hashPassword('zmien_haslo_' + ou.id), ou.id]
       );
     }
 
@@ -145,7 +175,8 @@ function generateOrderNumber() {
 }
 
 // Simple JWT using built-in crypto
-const JWT_SECRET = process.env.JWT_SECRET || 'sultan_jwt_secret_2024';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('Brak zmiennej środowiskowej JWT_SECRET');
 
 function createToken(payload) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -178,4 +209,4 @@ async function ensureDB() {
 }
 
 module.exports = { pool, ensureDB, rowToMenuItem, rowToCustomization, generateOrderNumber,
-  VALID_CATEGORIES, hashPassword, createToken, verifyToken, getTokenFromReq };
+  VALID_CATEGORIES, hashPassword, verifyPassword, createToken, verifyToken, getTokenFromReq };
