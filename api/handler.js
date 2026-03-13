@@ -1,5 +1,5 @@
 const { pool, ensureDB, rowToMenuItem, rowToCustomization, generateOrderNumber,
-  VALID_CATEGORIES, hashPassword, createToken, verifyToken, getTokenFromReq } = require('./_db');
+  VALID_CATEGORIES, hashPassword, verifyPassword, createToken, verifyToken, getTokenFromReq } = require('./_db');
 
 function send(res, status, body) {
   res.setHeader('Content-Type', 'application/json');
@@ -27,6 +27,34 @@ async function requireAuth(req, role) {
   return payload;
 }
 
+
+// ── Helper: calculate total from DB prices ────────────────────────────────────
+async function calcTotal(items) {
+  try {
+    let total = 0;
+    for (const item of items) {
+      // item.name matches menu_items.name
+      const { rows } = await pool.query('SELECT price FROM menu_items WHERE name=$1 AND available=true', [item.name]);
+      if (!rows.length) return null;
+      let itemPrice = parseFloat(rows[0].price);
+      // Add customization prices
+      if (item.customization) {
+        for (const [cat, ids] of Object.entries(item.customization)) {
+          if (!Array.isArray(ids)) continue;
+          for (const id of ids) {
+            const { rows: cr } = await pool.query(
+              'SELECT price FROM customization_items WHERE id=$1 AND category=$2 AND available=true', [id, cat]
+            );
+            if (cr.length) itemPrice += parseFloat(cr[0].price);
+          }
+        }
+      }
+      total += itemPrice * (item.qty || 1);
+    }
+    return Math.round(total * 100) / 100;
+  } catch { return null; }
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
@@ -48,7 +76,7 @@ module.exports = async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM users WHERE username=$1', [username]);
     if (!rows.length) return send(res, 401, { error: 'Nieprawidłowy login lub hasło' });
     const user = rows[0];
-    if (user.password_hash !== hashPassword(password)) return send(res, 401, { error: 'Nieprawidłowy login lub hasło' });
+    if (!verifyPassword(password, user.password_hash)) return send(res, 401, { error: 'Nieprawidłowy login lub hasło' });
     const token = createToken({ id: user.id, username: user.username, role: user.role, passwordHash: user.password_hash });
     return send(res, 200, { token, role: user.role, username: user.username, mustChangePass: user.must_change_pass });
   }
@@ -255,23 +283,45 @@ module.exports = async (req, res) => {
 
   // ── POST /api/payments/blik ────────────────────────────────────────────────
   if (parts[0]==='payments' && parts[1]==='blik' && method==='POST') {
-    const { code, orderId } = req.body;
+    const { code, customer_name, customer_phone, items, delivery_address, notes } = req.body;
     if (!code||code.length!==6||!/^\d{6}$/.test(code))
       return send(res, 400, { success:false, error:'Nieprawidłowy kod BLIK' });
+    if (!customer_name||!customer_phone||!items||!items.length)
+      return send(res, 400, { success:false, error:'Brakuje danych zamówienia' });
+    // Oblicz total po stronie serwera z cen w bazie
+    const serverTotal = await calcTotal(items);
+    if (serverTotal === null) return send(res, 400, { success:false, error:'Nieprawidłowe pozycje zamówienia' });
     await new Promise(r=>setTimeout(r,2000));
-    await pool.query("UPDATE orders SET payment_status='paid',order_status='confirmed' WHERE id=$1",[orderId]);
-    return send(res, 200, { success:true, message:'Płatność BLIK zatwierdzona ✓', transactionId:`BLIK-${Date.now()}` });
+    const { rows } = await pool.query(
+      `INSERT INTO orders (order_number,customer_name,customer_phone,delivery_address,items,total,payment_method,payment_status,order_status,notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'paid','new',$8) RETURNING id,order_number`,
+      [generateOrderNumber(),customer_name,customer_phone,
+       delivery_address?JSON.stringify(delivery_address):null,
+       JSON.stringify(items),serverTotal,'BLIK',notes||null]
+    );
+    return send(res, 200, { success:true, id:rows[0].id, order_number:rows[0].order_number, message:'Płatność BLIK zatwierdzona ✓' });
   }
 
   // ── POST /api/payments/card ────────────────────────────────────────────────
   if (parts[0]==='payments' && parts[1]==='card' && method==='POST') {
-    const { cardNumber, expiry, cvv, cardHolder, orderId } = req.body;
+    const { cardNumber, expiry, cvv, cardHolder, customer_name, customer_phone, items, delivery_address, notes } = req.body;
     if (!cardNumber||!expiry||!cvv||!cardHolder)
       return send(res, 400, { success:false, error:'Uzupełnij dane karty' });
+    if (!customer_name||!customer_phone||!items||!items.length)
+      return send(res, 400, { success:false, error:'Brakuje danych zamówienia' });
+    // Oblicz total po stronie serwera z cen w bazie
+    const serverTotal = await calcTotal(items);
+    if (serverTotal === null) return send(res, 400, { success:false, error:'Nieprawidłowe pozycje zamówienia' });
     await new Promise(r=>setTimeout(r,3000));
-    await pool.query("UPDATE orders SET payment_status='paid',order_status='confirmed' WHERE id=$1",[orderId]);
-    return send(res, 200, { success:true, message:'Płatność kartą zatwierdzona ✓',
-      transactionId:`CARD-${Date.now()}`, last4:cardNumber.replace(/\s/g,'').slice(-4) });
+    const { rows } = await pool.query(
+      `INSERT INTO orders (order_number,customer_name,customer_phone,delivery_address,items,total,payment_method,payment_status,order_status,notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'paid','new',$8) RETURNING id,order_number`,
+      [generateOrderNumber(),customer_name,customer_phone,
+       delivery_address?JSON.stringify(delivery_address):null,
+       JSON.stringify(items),serverTotal,'Karta',notes||null]
+    );
+    return send(res, 200, { success:true, id:rows[0].id, order_number:rows[0].order_number,
+      message:'Płatność kartą zatwierdzona ✓', last4:cardNumber.replace(/\s/g,'').slice(-4) });
   }
 
   // ── GET /api/stats ─────────────────────────────────────────────────────────
