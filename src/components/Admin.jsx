@@ -891,6 +891,7 @@ function OrdersPanel({ auth, onLogout }) {
   const [selected, setSelected] = useState(null)
   const [updating, setUpdating] = useState(null)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+  const authFailsRef = useRef(0)
 
   const fetchData = useCallback(async () => {
     try {
@@ -899,9 +900,14 @@ function OrdersPanel({ auth, onLogout }) {
         fetch(`${API}/orders`, { headers }),
         fetch(`${API}/stats`, { headers })
       ])
-      if (oRes.status === 401) { onLogout?.(); return }
+      if (oRes.status === 401) {
+        authFailsRef.current += 1
+        if (authFailsRef.current >= 3) onLogout?.()
+        return
+      }
+      authFailsRef.current = 0
       const [oData, sData] = await Promise.all([oRes.json(), sRes.json()])
-      if (!Array.isArray(oData)) { onLogout?.(); return }
+      if (!Array.isArray(oData)) { return }
       setOrders(oData); setStats(sData); setLastRefresh(new Date())
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
