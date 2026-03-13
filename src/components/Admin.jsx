@@ -36,17 +36,33 @@ export default function Admin({ auth, onLogout }) {
   const [newOrderPopup, setNewOrderPopup] = useState(null)
   const lastOrderIdRef = useRef(null)
   const authRef = useRef(auth)
+  const audioCtxRef = useRef(null)
   const isAdmin = auth?.role === 'admin'
 
   // Keep authRef current
   useEffect(() => { authRef.current = auth }, [auth])
 
+  // Unlock AudioContext on first user interaction
+  useEffect(() => {
+    function unlock() {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume()
+      }
+      document.removeEventListener('click', unlock)
+    }
+    document.addEventListener('click', unlock)
+    return () => document.removeEventListener('click', unlock)
+  }, [])
+
   // Poll for new orders every 15s
   useEffect(() => {
     function playSound() {
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)()
-        // 3 loud beeps
+        const ctx = audioCtxRef.current || new (window.AudioContext || window.webkitAudioContext)()
+        audioCtxRef.current = ctx
         ;[0, 0.35, 0.7].forEach(delay => {
           const osc = ctx.createOscillator()
           const gain = ctx.createGain()
@@ -58,7 +74,7 @@ export default function Admin({ auth, onLogout }) {
           osc.start(ctx.currentTime + delay)
           osc.stop(ctx.currentTime + delay + 0.25)
         })
-      } catch {}
+      } catch(e) { console.warn('Sound error:', e) }
     }
 
     async function checkNewOrders() {
@@ -70,24 +86,32 @@ export default function Admin({ auth, onLogout }) {
         })
         if (!res.ok) return
         const orders = await res.json()
-        if (!orders.length) return
-        const newest = orders[0]
+        if (!Array.isArray(orders)) return
+
+        // Znajdź najnowsze zamówienie ze statusem 'new'
+        const newOrders = orders.filter(o => o.order_status === 'new')
+
         if (lastOrderIdRef.current === null) {
-          lastOrderIdRef.current = newest.id
-          return
-        }
-        if (newest.id > lastOrderIdRef.current) {
-          lastOrderIdRef.current = newest.id
-          if (newest.order_status === 'new') {
-            setNewOrderPopup(newest)
+          // Pierwsze sprawdzenie — ustaw baseline i pokaż popup jeśli jest nowe zamówienie
+          lastOrderIdRef.current = orders.length ? orders[0].id : 0
+          if (newOrders.length > 0) {
+            setNewOrderPopup(newOrders[0])
             playSound()
           }
+          return
         }
-      } catch {}
+
+        // Kolejne sprawdzenia — szukaj zamówień nowszych niż baseline
+        const newer = orders.filter(o => o.id > lastOrderIdRef.current && o.order_status === 'new')
+        if (newer.length > 0) {
+          lastOrderIdRef.current = orders[0].id
+          setNewOrderPopup(newer[0])
+          playSound()
+        }
+      } catch(e) { console.warn('Poll error:', e) }
     }
 
-    // Initial check after 2s (żeby nie blokować ładowania)
-    const init = setTimeout(checkNewOrders, 2000)
+    const init = setTimeout(checkNewOrders, 1000)
     const interval = setInterval(checkNewOrders, 15000)
     return () => { clearTimeout(init); clearInterval(interval) }
   }, [])
