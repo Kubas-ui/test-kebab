@@ -10,8 +10,14 @@ const STATUS_CONFIG = {
   delivered:  { label: 'Wydane',      color: 'var(--green)',  bg: 'rgba(76,175,125,0.1)', icon: '📦' },
   cancelled:  { label: 'Anulowane',   color: 'var(--red)',    bg: 'rgba(224,80,80,0.08)', icon: '✕'  },
 }
+const STATUS_DISPLAY = {
+  new:       'Nowe',
+  confirmed: 'Potwierdź',
+  delivered: 'Wydaj',
+  cancelled: 'Anulowane',
+}
 const NEXT_STATUS = { new: 'confirmed', confirmed: 'delivered' }
-const NEXT_LABEL  = { new: 'Potwierdź zamówienie', confirmed: 'Wydaj zamówienie' }
+const NEXT_LABEL  = { new: '✓ Potwierdź zamówienie', confirmed: '📦 Wydaj zamówienie' }
 
 const MENU_CATEGORIES = [
   { id: 'classic', label: 'Klasyczny' }, { id: 'spicy',   label: 'Ostry' },
