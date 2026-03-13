@@ -246,7 +246,7 @@ module.exports = async (req, res) => {
   if (parts[0]==='orders' && parts[1] && parts[2]==='status' && method==='PATCH') {
     if (!await requireAuth(req)) return send(res, 401, { error: 'Brak autoryzacji' });
     const { status } = req.body;
-    const valid = ['new','confirmed','preparing','ready','delivered','cancelled'];
+    const valid = ['new','confirmed','delivered','cancelled'];
     if (!valid.includes(status)) return send(res, 400, { error: 'Zły status' });
     const { rowCount } = await pool.query('UPDATE orders SET order_status=$1 WHERE id=$2', [status,parts[1]]);
     if (!rowCount) return send(res, 404, { error: 'Nie znaleziono' });
@@ -283,7 +283,7 @@ module.exports = async (req, res) => {
       pool.query('SELECT COUNT(*) FROM orders WHERE created_at::date=$1',[today]),
       pool.query("SELECT COALESCE(SUM(total),0) FROM orders WHERE payment_status='paid'"),
       pool.query("SELECT COALESCE(SUM(total),0) FROM orders WHERE payment_status='paid' AND created_at::date=$1",[today]),
-      pool.query("SELECT COUNT(*) FROM orders WHERE order_status IN ('new','confirmed','preparing')"),
+      pool.query("SELECT COUNT(*) FROM orders WHERE order_status IN ('new','confirmed')"),
     ]);
     return send(res, 200, {
       totalOrders:parseInt(t.rows[0].count), todayOrders:parseInt(td.rows[0].count),
